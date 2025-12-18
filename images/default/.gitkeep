@@ -1,0 +1,5 @@
+# Default/Year-round banner images
+# These apply regardless of season or special periods
+# Format: 00.png, 01.png, ..., 23.png (24-hour format)
+# If you only want one set of banners for all year, place them here
+
