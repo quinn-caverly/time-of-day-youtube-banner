@@ -12,6 +12,17 @@ Automatically update your YouTube channel banner based on the time of day and se
 - 📁 Flexible folder structure - use as many or as few zones as you want
 - 🔍 Automatically finds nearest available banner if exact hour doesn't exist
 - ⚡ Priority system: Special periods → Seasons → Default
+- 🔐 Secure credential management with automatic token refresh
+
+## Quick Setup Summary
+
+1. **GCP Setup** (5 min): Create project, enable YouTube API, create OAuth client → download `client_secret.json`
+2. **Local Auth** (1 min): Run `python update_banner.py` once → creates `token.json`
+3. **GitHub Secret** (1 min): Copy `token.json` content → paste into GitHub Secret `YOUTUBE_CREDENTIALS_JSON`
+4. **Add Images**: Put banner PNGs in `images/default/` or season folders
+5. **Done!** Workflow runs automatically every hour
+
+**See [SETUP.md](SETUP.md) for detailed instructions.**
 
 ## Folder Structure
 
@@ -71,101 +82,17 @@ The following special periods are built-in (you can customize dates in `update_b
 
 To add more special periods, edit the `get_special_period()` function in `update_banner.py`.
 
-## Quick Start
+## Setup Instructions
 
 For detailed step-by-step setup instructions, see [SETUP.md](SETUP.md).
 
-## Setup Instructions
+### Quick Overview:
 
-### 1. Clone the Repository
-
-```bash
-git clone <your-repo-url>
-cd time-of-day-yt-banner
-```
-
-### 2. Set Up YouTube API Credentials (GCP Project)
-
-You'll need to create OAuth 2.0 credentials in the Google Cloud Console:
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select an existing one (note your GCP project ID for reference)
-3. Enable the **YouTube Data API v3**:
-   - Navigate to "APIs & Services" → "Library"
-   - Search for "YouTube Data API v3"
-   - Click "Enable"
-4. Go to "Credentials" → "Create Credentials" → "OAuth 2.0 Client ID"
-   - If prompted, configure the OAuth consent screen first
-   - Choose "Desktop app" as the application type
-   - Click "Create"
-5. Download the credentials JSON file (this is your `client_secret.json`)
-
-### 3. Authenticate (Local Testing)
-
-For local testing, rename your downloaded credentials file to `client_secret.json`:
-
-```bash
-# Place your credentials file in the project root
-mv ~/Downloads/client_secret.json .
-```
-
-Run the script once locally to authenticate:
-
-```bash
-pip install -r requirements.txt
-python update_banner.py
-```
-
-This will open a browser window for authentication. After successful authentication, a `token.json` file will be created.
-
-### 4. Set Up GitHub Secrets
-
-For GitHub Actions to work, you need to add secrets to your repository:
-
-1. Go to your GitHub repository → Settings → Secrets and variables → Actions
-2. Add the following secrets:
-
-   - **YOUTUBE_CREDENTIALS_JSON**: The contents of your `token.json` file (created after running authentication locally)
-     - After running `python update_banner.py` locally (step 3), a `token.json` file will be created
-     - Open `token.json` and copy the entire JSON content
-     - Paste it as the secret value (you can also base64 encode it - the script handles both)
-   
-   - **YOUTUBE_CHANNEL_ID** (optional): Your YouTube channel ID
-     - If not provided, the script will use the authenticated user's channel
-     - Find it in your YouTube Studio → Settings → Channel → Advanced settings
-
-### 5. Add Your Banner Images
-
-Add your PNG banner images to the appropriate folders:
-
-**Option 1: Year-round banners only (simplest)**
-- Place images in `images/default/` (00.png through 23.png)
-- These will be used regardless of season or special periods
-
-**Option 2: Seasonal banners**
-- Place images in `images/{season}/` folders (spring, summer, fall, winter)
-- Each season folder can contain 00.png through 23.png
-
-**Option 3: Special periods + seasons**
-- Add special period folders like `images/christmas/` for holiday-specific banners
-- These take priority over seasonal banners
-
-**Option 4: Mix and match**
-- Use any combination of the above
-- The script will automatically choose based on priority: special periods → seasons → default
-
-**Tips:**
-- You don't need images for every hour - the script finds the closest available one
-- Start with a few images and add more over time
-- You can have just a `default/` folder if you want one set of banners year-round
-
-### 6. Test the Workflow
-
-You can manually trigger the workflow:
-
-1. Go to your repository → Actions
-2. Select "Update YouTube Banner"
-3. Click "Run workflow"
+1. **GCP Project Setup**: Create project, enable YouTube Data API v3, create OAuth 2.0 Client ID
+2. **One-Time Local Auth**: Run `python update_banner.py` to generate `token.json`
+3. **GitHub Secret**: Copy `token.json` content → GitHub Secret `YOUTUBE_CREDENTIALS_JSON`
+4. **Add Banner Images**: Place PNG files in `images/` folders
+5. **Test**: Manually trigger workflow or wait for scheduled run
 
 ## Configuration
 
@@ -194,15 +121,49 @@ To use a different directory for images, modify the `images_dir` parameter in th
 1. **GitHub Actions** triggers the workflow on schedule (every hour by default)
 2. The **Python script** (`update_banner.py`) runs:
    - Determines current season and hour
-   - Finds the appropriate banner image
+   - Finds the appropriate banner image (using priority system)
    - Authenticates with YouTube API using stored credentials
+   - Automatically refreshes token if needed
    - Uploads the banner to your channel
 
+## Credentials & Security
+
+- **One-time setup**: You authenticate locally once to get a refresh token
+- **GitHub Secrets**: The refresh token is stored securely as a GitHub Secret
+- **Auto-refresh**: The script automatically refreshes expired access tokens
+- **No expiration**: Refresh tokens don't expire as long as they're used regularly (workflow runs hourly)
+
 ## Troubleshooting
+
+### "Access blocked" / "access_denied" Error
+
+If you see "Youtube Banner Changer has not completed the Google verification process":
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → Your project
+2. **APIs & Services** → **OAuth consent screen**
+3. Scroll to **"Test users"** section
+4. Click **"+ ADD USERS"**
+5. Add your email address (the one you're signing in with)
+6. Click **"Add"**
+7. Try running the script again
+
+### "redirect_uri_mismatch" Error
+
+If you see this error when running `python update_banner.py`:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → Your project
+2. **APIs & Services** → **Credentials**
+3. Click on your OAuth 2.0 Client ID
+4. Under **"Authorized redirect URIs"**, add: `http://localhost:8080/`
+5. Click **"Save"**
+6. Run the script again
+
+See [OAUTH_SETUP.md](OAUTH_SETUP.md) for details.
 
 ### "No valid credentials found"
 
 - Make sure you've set the `YOUTUBE_CREDENTIALS_JSON` secret in GitHub
+- Verify the secret contains the full JSON from your `token.json` file
 - For local testing, ensure `client_secret.json` exists and you've run the script at least once
 
 ### "No banner image found"
@@ -217,6 +178,14 @@ To use a different directory for images, modify the `images_dir` parameter in th
 - Check the GitHub Actions logs for errors
 - Verify your YouTube API credentials are valid
 - Ensure the YouTube Data API v3 is enabled in your Google Cloud project
+- Check that your OAuth app has your email in the test users list
+
+### Token expired / Authentication errors
+
+- The script should auto-refresh tokens, but if you get errors:
+  - Re-run the local auth step: `python update_banner.py`
+  - Copy the new `token.json` content to the GitHub Secret
+  - Make sure your OAuth app is still in "Testing" mode or published
 
 ## Contributing
 
@@ -225,4 +194,3 @@ Feel free to submit issues or pull requests if you'd like to improve this projec
 ## License
 
 MIT License - feel free to use this for your own YouTube channel!
-

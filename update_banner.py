@@ -186,7 +186,8 @@ def get_authenticated_service():
             if not creds:
                 flow = InstalledAppFlow.from_client_secrets_file(
                     'client_secret.json', SCOPES)
-                creds = flow.run_local_server(port=0)
+                # Use port 8080 - make sure http://localhost:8080/ is added to Authorized redirect URIs in GCP
+                creds = flow.run_local_server(port=8080)
             elif creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             
@@ -230,7 +231,7 @@ def upload_banner(youtube_service, banner_path: Path):
     banner_url = upload_response['url']
     print(f"Banner uploaded successfully. URL: {banner_url}")
     
-    # Step 2: Get channel ID
+    # Step 2: Get channel ID and current branding settings
     channel_id = os.environ.get('YOUTUBE_CHANNEL_ID')
     if not channel_id:
         # Try to get channel ID from authenticated user
@@ -241,27 +242,95 @@ def upload_banner(youtube_service, banner_path: Path):
         else:
             raise Exception("Could not determine channel ID. Set YOUTUBE_CHANNEL_ID environment variable.")
     
-    # Step 3: Update channel brandingSettings with the new banner URL
-    print(f"Updating channel banner (Channel ID: {channel_id})...")
-    youtube_service.channels().update(
+    # Step 3: Get current channel branding settings
+    print(f"Getting current channel settings (Channel ID: {channel_id})...")
+    channel_request = youtube_service.channels().list(
         part='brandingSettings',
-        body={
-            'id': channel_id,
-            'brandingSettings': {
-                'image': {
-                    'bannerExternalUrl': banner_url
-                }
-            }
-        }
+        id=channel_id
+    )
+    channel_response = channel_request.execute()
+    
+    if not channel_response['items']:
+        raise Exception(f"Channel with ID {channel_id} not found")
+    
+    # Step 4: Update channel brandingSettings with the new banner URL
+    print(f"Updating channel banner...")
+    channel_data = channel_response['items'][0]
+    
+    # Ensure brandingSettings structure exists
+    if 'brandingSettings' not in channel_data:
+        channel_data['brandingSettings'] = {}
+    if 'image' not in channel_data['brandingSettings']:
+        channel_data['brandingSettings']['image'] = {}
+    
+    # Set the banner URL
+    channel_data['brandingSettings']['image']['bannerExternalUrl'] = banner_url
+    
+    # Update the channel - we need to include the channel ID in the body
+    update_body = {
+        'id': channel_id,
+        'brandingSettings': channel_data['brandingSettings']
+    }
+    
+    # Update the channel
+    update_response = youtube_service.channels().update(
+        part='brandingSettings',
+        body=update_body
     ).execute()
     
-    print(f"Successfully updated banner: {banner_path}")
+    # Verify the update
+    if 'brandingSettings' in update_response and 'image' in update_response['brandingSettings']:
+        updated_url = update_response['brandingSettings']['image'].get('bannerExternalUrl', 'N/A')
+        print(f"Channel update API call completed successfully!")
+        print(f"Updated banner URL: {updated_url}")
+        print(f"Successfully updated banner: {banner_path}")
+    else:
+        print(f"Channel update API call completed, but couldn't verify banner URL in response.")
+        print(f"Successfully updated banner: {banner_path}")
+    
+    print(f"Note: Banner changes may take 5-15 minutes to appear due to YouTube's caching.")
+    print(f"      Try hard refresh (Ctrl+Shift+R) or view in incognito mode.")
 
 
 def main():
     """
     Main function to update YouTube banner.
     """
+    # Check if we're just authenticating (no token.json exists, but client_secret.json does)
+    has_client_secret = Path('client_secret.json').exists()
+    has_token = Path('token.json').exists()
+    is_auth_only = not has_token and has_client_secret
+    
+    if is_auth_only:
+        print("No token.json found. Running authentication only...")
+        print("(Banner images not required for authentication)")
+        try:
+            youtube_service = get_authenticated_service()
+            print("Authentication successful! token.json has been created.")
+            print("You can now:")
+            print("  1. Add banner images to images/default/ or season folders")
+            print("  2. Copy token.json content to GitHub Secret YOUTUBE_CREDENTIALS_JSON")
+            print("  3. Run the script again or let GitHub Actions handle updates")
+            return
+        except Exception as e:
+            print(f"Error during authentication: {e}", file=sys.stderr)
+            sys.exit(1)
+    
+    # Check if neither credential file exists (initial setup needed)
+    if not has_client_secret and not has_token:
+        creds_json = os.environ.get('YOUTUBE_CREDENTIALS_JSON')
+        if not creds_json:
+            print("Error: No credentials found!", file=sys.stderr)
+            print("", file=sys.stderr)
+            print("To set up authentication:", file=sys.stderr)
+            print("  1. Download client_secret.json from Google Cloud Console", file=sys.stderr)
+            print("  2. Place it in the project root directory", file=sys.stderr)
+            print("  3. Run this script again to authenticate", file=sys.stderr)
+            print("", file=sys.stderr)
+            print("For GitHub Actions, set YOUTUBE_CREDENTIALS_JSON secret instead.", file=sys.stderr)
+            sys.exit(1)
+    
+    # Normal operation: find banner and update
     # Get current time
     now = datetime.now()
     special_period = get_special_period(now.month, now.day)
