@@ -164,44 +164,64 @@ def get_authenticated_service():
     if creds_json:
         try:
             creds_data = json.loads(creds_json)
+            # Check if refresh_token is present
+            if 'refresh_token' not in creds_data:
+                raise ValueError(
+                    "token.json is missing 'refresh_token' field. "
+                    "You need to re-authenticate to get a refresh token. "
+                    "Delete token.json locally and run the script again to re-authenticate."
+                )
             creds = Credentials.from_authorized_user_info(creds_data, SCOPES)
             
             # Refresh if needed
             if creds.expired and creds.refresh_token:
                 creds.refresh(Request())
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
         except json.JSONDecodeError:
             # Try as base64 encoded
             try:
                 creds_data = json.loads(base64.b64decode(creds_json).decode())
+                if 'refresh_token' not in creds_data:
+                    raise ValueError(
+                        "token.json is missing 'refresh_token' field. "
+                        "You need to re-authenticate to get a refresh token."
+                    )
                 creds = Credentials.from_authorized_user_info(creds_data, SCOPES)
                 if creds.expired and creds.refresh_token:
                     creds.refresh(Request())
+            except ValueError as e:
+                print(f"Error: {e}", file=sys.stderr)
+                sys.exit(1)
             except Exception as e:
-                print(f"Error parsing credentials from environment: {e}")
+                print(f"Error parsing credentials from environment: {e}", file=sys.stderr)
                 sys.exit(1)
     
-    # Fallback to client_secret.json (for local development)
+    # Try token.json if it exists (don't re-authenticate if token.json exists)
     if not creds or not creds.valid:
-        if os.path.exists('client_secret.json'):
-            if not creds:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    'client_secret.json', SCOPES)
-                # Use port 8080 - make sure http://localhost:8080/ is added to Authorized redirect URIs in GCP
-                creds = flow.run_local_server(port=8080)
-            elif creds.expired and creds.refresh_token:
+        if os.path.exists('token.json'):
+            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+            if creds.expired and creds.refresh_token:
                 creds.refresh(Request())
+                with open('token.json', 'w') as token:
+                    token.write(creds.to_json())
+        elif os.path.exists('client_secret.json'):
+            # Only authenticate if token.json doesn't exist
+            flow = InstalledAppFlow.from_client_secrets_file(
+                'client_secret.json', SCOPES)
+            # Use port 8080 - make sure http://localhost:8080/ is added to Authorized redirect URIs in GCP
+            # Force fresh authentication with prompt='consent' to ensure refresh token
+            print("Starting authentication...")
+            print("If your browser auto-completes, try:")
+            print("  1. Use an incognito/private window")
+            print("  2. Or clear cookies for localhost and accounts.google.com")
+            print()
+            creds = flow.run_local_server(port=8080, prompt='consent', access_type='offline')
             
             # Save credentials for future use
             with open('token.json', 'w') as token:
                 token.write(creds.to_json())
-        else:
-            # Try token.json if it exists
-            if os.path.exists('token.json'):
-                creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-                if creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                    with open('token.json', 'w') as token:
-                        token.write(creds.to_json())
     
     if not creds or not creds.valid:
         raise Exception(
