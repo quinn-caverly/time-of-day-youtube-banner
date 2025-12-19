@@ -8,6 +8,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+import pytz
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -351,8 +352,10 @@ def main():
             sys.exit(1)
     
     # Normal operation: find banner and update
-    # Get current time
-    now = datetime.now()
+    # Get current time in EST/EDT (US Eastern Time)
+    # GitHub Actions runs in UTC, so we need to convert to Eastern time
+    eastern = pytz.timezone('US/Eastern')
+    now = datetime.now(eastern)  # Get current time in Eastern timezone
     special_period = get_special_period(now.month, now.day)
     season = get_season(now.month)
     hour = now.hour
