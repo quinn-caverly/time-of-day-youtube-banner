@@ -25,3 +25,4 @@ credentials.json
 .DS_Store
 Thumbs.db
 
+resize_images.py

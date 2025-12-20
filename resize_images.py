@@ -69,7 +69,7 @@ def resize_and_optimize_image(input_path: Path, output_path: Path = None):
 
 def main():
     """Resize all PNG images in the images/default/ directory."""
-    images_dir = Path('images/default')
+    images_dir = Path('images/christmas')
     
     if not images_dir.exists():
         print(f"Error: {images_dir} does not exist")
