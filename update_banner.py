@@ -126,7 +126,8 @@ def find_available_banner(special_period: str, season: str, hour: int, images_di
     # Priority 1: Check special periods first
     if special_period:
         banner_path = find_banner_in_zone(special_period, hour, images_dir)
-        if banner_path:x
+        if banner_path:
+            return banner_path
         print(f"No banner found in special period '{special_period}', trying season...")
     
     # Priority 2: Check season-specific folder
